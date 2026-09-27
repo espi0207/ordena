@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ordena
+GenericName=Ordenar carpetas
+Comment=Ordena la carpeta de Descargas: por tipo, las fotos por fecha y los duplicados aparte
+Exec=ordena-app %f
+Icon=ordena
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=descargas;ordenar;duplicados;fotos;carpeta;

@@ -1,0 +1,2 @@
+# Las fotos y vídeos de prueba son binarios: que git no les toque los finales de línea en Windows.
+tests/fixtures/** binary

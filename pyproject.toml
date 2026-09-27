@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ordena"
+version = "1.0.0"
+description = "Ordena una carpeta desordenada (como Descargas): por tipo, fotos por fecha y duplicados aparte. Se puede deshacer."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "espi0207" }]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff==0.16.9"]
+
+[project.scripts]
+ordena = "ordena.__main__:main"
+
+[project.gui-scripts]
+ordena-app = "ordena.gui:main"
+
+[tool.setuptools]
+packages = ["ordena"]
+
+[tool.setuptools.package-data]
+ordena = ["icon.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

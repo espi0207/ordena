@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -346,9 +347,15 @@ def undo_last(root: Path) -> tuple[int, list[str]]:
     journal = root / JOURNAL
     if keep:
         # A un archivo aparte y luego se cambia por el bueno: si se corta a mitad, no se pierde nada.
-        tmp = journal.with_name(journal.name + ".tmp")
-        tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in keep), encoding="utf-8")
-        os.replace(tmp, journal)
+        # (con nombre único y creado en exclusiva: no puede pisar ni seguir nada que ya estuviera)
+        fd, tmp = tempfile.mkstemp(dir=root, prefix=JOURNAL + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in keep))
+            os.replace(tmp, journal)
+        except BaseException:
+            os.unlink(tmp)
+            raise
     else:
         journal.unlink()
     return done, problems

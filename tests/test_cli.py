@@ -135,3 +135,22 @@ def test_tamanos():
     assert human_size(1536) == "1,5 KB"
     assert human_size(150 * 1024**2) == "150 MB"
     assert human_size(5 * 1024**3) == "5,0 GB"
+
+
+def test_refuses_a_subfolder_of_a_git_project(tmp_path):
+    from ordena.folders import refuse_reason
+
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "src").mkdir()
+    assert refuse_reason(tmp_path / "src") is not None
+
+
+def test_a_git_repo_in_the_home_folder_does_not_block_downloads(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from ordena.folders import refuse_reason
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    (tmp_path / ".git").mkdir()  # ~ guardada en git (dotfiles)
+    (tmp_path / "Descargas").mkdir()
+    assert refuse_reason(tmp_path / "Descargas") is None

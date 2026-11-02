@@ -263,3 +263,121 @@ def test_un_historial_manipulado_no_saca_nada_de_la_carpeta(tmp_path):
     assert (folder / "Documentos/a.pdf").read_text(encoding="utf-8") == "a"
     assert not (tmp_path / "fuera.pdf").exists() and not (folder / "robado.txt").exists()
     assert tmp_path.exists()
+
+
+# Fallos encontrados en la revisión con Codex
+
+
+def test_never_moves_into_a_folder_that_is_a_link_to_somewhere_else(tmp_path):
+    root, outside = tmp_path / "Descargas", tmp_path / "fuera"
+    root.mkdir()
+    outside.mkdir()
+    make(root, {"a.pdf": "pdf"})
+    (root / "Documentos").symlink_to(outside, target_is_directory=True)
+    done, problems = apply_plan(build_plan(root))
+    assert done == 0 and problems
+    assert (root / "a.pdf").exists() and not any(outside.iterdir())
+
+
+def test_file_changed_after_the_preview_is_not_moved(tmp_path):
+    # Se miró con a.txt y b.txt iguales; luego b.txt cambia: ya no es un duplicado.
+    make(tmp_path, {"a.txt": "igual", "b.txt": "igual"})
+    plan = build_plan(tmp_path)
+    assert [m.source for m in plan.duplicates] == ["b.txt"]
+    (tmp_path / "b.txt").write_text("ahora es distinto y más largo")
+    done, problems = apply_plan(plan)
+    assert (tmp_path / "b.txt").exists() and not (tmp_path / "Duplicados").exists()
+    assert any("b.txt" in p and "cambiado" in p for p in problems)
+
+
+def test_journal_with_a_torn_last_line_keeps_the_next_run(tmp_path):
+    (tmp_path / JOURNAL).write_text('{"run": "viejo", "from": "x.txt"')  # cortado sin salto de línea
+    make(tmp_path, {"a.pdf": "pdf"})
+    apply_plan(build_plan(tmp_path))
+    entries = read_journal(tmp_path)
+    assert [e["from"] for e in entries if "from" in e] == ["a.pdf"]
+    assert [e["dir"] for e in entries if "dir" in e] == ["Documentos"]  # sin esto, deshacer deja la carpeta
+
+
+def test_malformed_journal_entry_does_not_crash_undo(tmp_path):
+    (tmp_path / JOURNAL).write_text(json.dumps({"run": "x", "dir": "Documentos", "from": "a.txt"}) + "\n")
+    undo_last(tmp_path)  # antes: KeyError 'to'
+
+
+def test_if_the_journal_cannot_be_written_the_file_goes_back(tmp_path, monkeypatch):
+    make(tmp_path, {"a.pdf": "pdf"})
+    plan = build_plan(tmp_path)
+
+    def full_disk(journal, **entry):
+        if "from" in entry:
+            raise OSError(28, "No space left on device")
+        journal.write(json.dumps(entry) + "\n")
+
+    monkeypatch.setattr(organizer, "_log", full_disk)
+    done, problems = apply_plan(plan)
+    assert done == 0 and problems
+    assert (tmp_path / "a.pdf").exists()  # sin apuntar no se puede deshacer: mejor no moverlo
+
+
+def test_undo_rewrites_the_journal_atomically(tmp_path, monkeypatch):
+    make(tmp_path, {"a.pdf": "pdf", "b.mp3": "mp3"})
+    apply_plan(build_plan(tmp_path))
+    make(tmp_path, {"c.txt": "txt"})
+    apply_plan(build_plan(tmp_path))
+    calls = []
+    real = os.replace
+    monkeypatch.setattr(organizer.os, "replace", lambda a, b: (calls.append(b), real(a, b)))
+    undo_last(tmp_path)
+    assert calls and Path(calls[0]).name == JOURNAL
+
+
+def test_posix_fallback_without_hard_links_never_overwrites(tmp_path, monkeypatch):
+    src, dst = tmp_path / "a.txt", tmp_path / "b.txt"
+    src.write_text("mío")
+    monkeypatch.setattr(organizer.os, "link", lambda a, b: (_ for _ in ()).throw(OSError(1, "no links")))
+    real_rename = os.rename
+
+    other_wrote = []
+
+    def racing_rename(a, b):
+        # justo antes de mover, otro programa crea el destino (si puede)
+        try:
+            fd = os.open(b, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, b"del otro")
+            os.close(fd)
+            other_wrote.append(b)
+        except FileExistsError:
+            pass
+        return real_rename(a, b)
+
+    monkeypatch.setattr(organizer.os, "rename", racing_rename)
+    if os.name == "nt":
+        pytest.skip("en Windows rename ya se niega a sobrescribir")
+    safe_move(src, dst)
+    assert dst.read_text() == "mío"
+    assert other_wrote == []  # el nombre ya estaba reservado: no se ha pisado el archivo de nadie
+
+
+def test_windows_hidden_or_system_attribute_counts_as_hidden():
+    from types import SimpleNamespace
+
+    from ordena.organizer import hidden_by_attributes
+
+    assert hidden_by_attributes(SimpleNamespace(st_file_attributes=0x2))  # FILE_ATTRIBUTE_HIDDEN
+    assert hidden_by_attributes(SimpleNamespace(st_file_attributes=0x4))  # FILE_ATTRIBUTE_SYSTEM
+    assert not hidden_by_attributes(SimpleNamespace(st_file_attributes=0x20))  # ARCHIVE: normal
+    assert not hidden_by_attributes(SimpleNamespace())  # Linux y macOS no tienen el campo
+
+
+def test_undo_does_not_follow_a_link_left_at_the_temporary_name(tmp_path):
+    outside = tmp_path / "importante.txt"
+    outside.write_text("no tocar")
+    root = tmp_path / "Descargas"
+    root.mkdir()
+    make(root, {"a.pdf": "pdf"})
+    apply_plan(build_plan(root))
+    make(root, {"b.txt": "txt"})
+    apply_plan(build_plan(root))
+    (root / (JOURNAL + ".tmp")).symlink_to(outside)
+    undo_last(root)
+    assert outside.read_text() == "no tocar"

@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -56,6 +57,7 @@ class Move:
     folder: str  # "Documentos", "Fotos/2024/08 agosto", "Duplicados"...
     size: int
     note: str = ""
+    mtime: float = 0.0  # para saber si el archivo ha cambiado desde la vista previa
 
 
 @dataclass
@@ -130,6 +132,11 @@ def free_name(target: PurePosixPath, taken: set[str], root: Path) -> PurePosixPa
     return candidate
 
 
+def hidden_by_attributes(info) -> bool:
+    """En Windows lo oculto o del sistema va por atributos, no por el nombre."""
+    return bool(getattr(info, "st_file_attributes", 0) & 0x6)  # HIDDEN | SYSTEM
+
+
 def build_plan(root: Path, by_date: bool = True, duplicates: bool = True) -> Plan:
     """Qué se haría con cada archivo, sin tocar nada. Solo los archivos sueltos de la
     carpeta: las subcarpetas que ya hay se dejan tal cual."""
@@ -140,7 +147,7 @@ def build_plan(root: Path, by_date: bool = True, duplicates: bool = True) -> Pla
         name = entry.name
         if entry.is_symlink() or not entry.is_file():
             continue
-        if name.startswith(".") or name.lower() in SYSTEM:
+        if name.startswith(".") or name.lower() in SYSTEM or hidden_by_attributes(entry.stat()):
             plan.skipped.append((name, "oculto o del sistema"))
         elif entry.suffix.lower() in PARTIAL:
             plan.skipped.append((name, "descarga a medias"))
@@ -156,7 +163,8 @@ def build_plan(root: Path, by_date: bool = True, duplicates: bool = True) -> Pla
             folder, note = destination(f, by_date)
         target = free_name(PurePosixPath(folder) / f.name, taken, root)
         taken.add(str(target).lower())
-        plan.moves.append(Move(f.name, str(target), folder, f.stat().st_size, note))
+        info = f.stat()
+        plan.moves.append(Move(f.name, str(target), folder, info.st_size, note, info.st_mtime))
     return plan
 
 
@@ -176,10 +184,16 @@ def safe_move(src: Path, dst: Path) -> None:
     except FileExistsError:
         raise
     except OSError:
-        # Hay sistemas de archivos sin enlaces duros (el FAT de muchos USB): se hace a la antigua.
-        if os.path.lexists(dst):
-            raise FileExistsError(17, "File exists", str(dst)) from None
-        os.rename(src, dst)
+        # Hay sistemas de archivos sin enlaces duros (el FAT de muchos USB). Se reserva el
+        # nombre creando un archivo vacío con O_EXCL (falla si ya existe, de forma atómica) y
+        # el rename sustituye esa reserva, que es nuestra: no se pisa nada de nadie.
+        fd = os.open(dst, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        try:
+            os.rename(src, dst)
+        except BaseException:
+            os.unlink(dst)
+            raise
         return
     os.unlink(src)
 
@@ -189,14 +203,43 @@ def _log(journal, **entry) -> None:
     journal.flush()
 
 
+def _changed(path: Path, move: Move) -> bool:
+    try:
+        info = path.stat()
+    except OSError:
+        return False  # si ya no está, safe_move dará el error de siempre
+    return info.st_size != move.size or (move.mtime and info.st_mtime != move.mtime)
+
+
+def _end_with_newline(path: Path) -> None:
+    """Si el historial se cortó a mitad de una línea, la siguiente no debe pegarse a ella."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(-1, os.SEEK_END)
+            torn = fh.read(1) != b"\n"
+    except OSError:
+        return  # vacío o no existe
+    if torn:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n")
+
+
 def apply_plan(plan: Plan) -> tuple[int, list[str]]:
     """Ejecuta el plan. Devuelve (movidos, problemas)."""
     # La hora para enseñarla al deshacer y unas letras al azar por si se ordena dos veces en el mismo segundo.
     run = f"{datetime.now():%Y-%m-%dT%H:%M:%S}/{os.urandom(3).hex()}"
     done, problems = 0, []
+    _end_with_newline(plan.root / JOURNAL)
     with open(plan.root / JOURNAL, "a", encoding="utf-8") as journal:
         for move in plan.moves:
             src, dst = plan.root / move.source, plan.root / move.target
+            if _inside(plan.root, move.target) is None:
+                # Una carpeta de destino que es un enlace a otro sitio: se saldría de la carpeta.
+                problems.append(f"{move.source}: {move.folder} apunta fuera de la carpeta, no lo muevo")
+                continue
+            if _changed(src, move):
+                problems.append(f"{move.source}: ha cambiado desde la vista previa, vuelve a mirar antes de ordenar")
+                continue
             try:
                 # Las carpetas nuevas también se apuntan, para quitarlas al deshacer (y solo esas).
                 new_dirs = [p for p in reversed(dst.parents) if p != plan.root and plan.root in p.parents]
@@ -209,7 +252,16 @@ def apply_plan(plan: Plan) -> tuple[int, list[str]]:
                 problems.append(f"{move.source}: {exc.strerror or exc}")
                 continue
             # Apuntado nada más moverlo: si se corta aquí, deshacer sabe hasta dónde llegó.
-            _log(journal, run=run, **{"from": move.source, "to": move.target})
+            try:
+                _log(journal, run=run, **{"from": move.source, "to": move.target})
+            except OSError as exc:
+                # Sin apuntarlo no se podría deshacer (p. ej. disco lleno): se devuelve y se para.
+                try:
+                    safe_move(dst, src)
+                except OSError:
+                    problems.append(f"{move.source}: está en {move.target} y no se ha podido apuntar")
+                problems.append(f"no se puede escribir el historial ({exc.strerror or exc}); paro aquí")
+                break
             done += 1
     return done, problems
 
@@ -226,9 +278,11 @@ def read_journal(root: Path) -> list[dict]:
             continue  # una línea a medias si se cortó justo al escribirla
         if not isinstance(entry, dict) or not isinstance(entry.get("run"), str):
             continue
-        is_move = isinstance(entry.get("from"), str) and isinstance(entry.get("to"), str)
-        if is_move or isinstance(entry.get("dir"), str):
-            entries.append(entry)
+        # Solo dos formas válidas, y con solo sus campos: así deshacer no se encuentra sorpresas.
+        if isinstance(entry.get("from"), str) and isinstance(entry.get("to"), str):
+            entries.append({"run": entry["run"], "from": entry["from"], "to": entry["to"]})
+        elif isinstance(entry.get("dir"), str) and "from" not in entry and "to" not in entry:
+            entries.append({"run": entry["run"], "dir": entry["dir"]})
     return entries
 
 
@@ -292,7 +346,16 @@ def undo_last(root: Path) -> tuple[int, list[str]]:
     keep = [e for e in entries if e["run"] != last or id(e) in pending]
     journal = root / JOURNAL
     if keep:
-        journal.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in keep), encoding="utf-8")
+        # A un archivo aparte y luego se cambia por el bueno: si se corta a mitad, no se pierde nada.
+        # (con nombre único y creado en exclusiva: no puede pisar ni seguir nada que ya estuviera)
+        fd, tmp = tempfile.mkstemp(dir=root, prefix=JOURNAL + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in keep))
+            os.replace(tmp, journal)
+        except BaseException:
+            os.unlink(tmp)
+            raise
     else:
         journal.unlink()
     return done, problems

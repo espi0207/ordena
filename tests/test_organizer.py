@@ -367,3 +367,17 @@ def test_windows_hidden_or_system_attribute_counts_as_hidden():
     assert hidden_by_attributes(SimpleNamespace(st_file_attributes=0x4))  # FILE_ATTRIBUTE_SYSTEM
     assert not hidden_by_attributes(SimpleNamespace(st_file_attributes=0x20))  # ARCHIVE: normal
     assert not hidden_by_attributes(SimpleNamespace())  # Linux y macOS no tienen el campo
+
+
+def test_undo_does_not_follow_a_link_left_at_the_temporary_name(tmp_path):
+    outside = tmp_path / "importante.txt"
+    outside.write_text("no tocar")
+    root = tmp_path / "Descargas"
+    root.mkdir()
+    make(root, {"a.pdf": "pdf"})
+    apply_plan(build_plan(root))
+    make(root, {"b.txt": "txt"})
+    apply_plan(build_plan(root))
+    (root / (JOURNAL + ".tmp")).symlink_to(outside)
+    undo_last(root)
+    assert outside.read_text() == "no tocar"

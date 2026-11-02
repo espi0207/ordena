@@ -37,6 +37,11 @@ def refuse_reason(folder: Path) -> str | None:
         return "es tu carpeta personal; mejor una de dentro, como Descargas o Escritorio"
     if (folder / ".git").exists():
         return "es un proyecto de git y moverle los archivos lo rompería"
+    # (sin contar la carpeta personal ni lo de encima: hay quien la tiene en git por la configuración)
+    home = Path.home().resolve()
+    above = [p for p in folder.parents if p != home and p not in home.parents]
+    if any((p / ".git").exists() for p in above):
+        return "está dentro de un proyecto de git y moverle los archivos lo rompería"
     system = [Path(d) for d in SYSTEM_DIRS if os.name != "nt"]
     system += [Path(os.environ[v]) for v in WINDOWS_DIRS if os.environ.get(v)]
     for path in system:

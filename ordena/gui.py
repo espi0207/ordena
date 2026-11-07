@@ -19,7 +19,7 @@ from tkinter import font as tkfont
 
 from . import __version__, demo
 from .folders import downloads_folder, open_in_file_manager, refuse_reason
-from .organizer import DUPLICATES, Plan, apply_plan, build_plan, last_run, undo_last
+from .organizer import DUPLICATES, SUSPICIOUS, Plan, apply_plan, build_plan, last_run, undo_last
 from .report import human_size, plural, run_date, summary_key
 
 ICON = Path(__file__).with_name("icon.png")
@@ -159,7 +159,10 @@ class App:
         expand = len(plan.moves) <= EXPAND_UP_TO
         for folder in sorted(by_folder, key=lambda f: (summary_key(f), f)):
             moves = by_folder[folder]
-            note = "no se borran: los decides tú" if folder == DUPLICATES else ""
+            note = {
+                DUPLICATES: "no se borran: los decides tú",
+                SUSPICIOUS: "no los abras: mira la nota de cada uno",
+            }.get(folder, "")
             label = f"{folder}/  ({len(moves)})"
             group = self.tree.insert("", "end", text=label, values=(note,), open=expand, tags=("group",))
             for move in moves:
@@ -311,6 +314,7 @@ def self_check() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         folder = demo.create(Path(tmp))
         before = sorted(p.name for p in folder.iterdir())
+        to_move = len(build_plan(folder).moves)
         root = tk.Tk()
         app = App(root, folder)
         steps = iter(["apply", "undo", "check"])
@@ -327,7 +331,7 @@ def self_check() -> int:
                 app.undo(confirm=False)
             else:
                 after = sorted(p.name for p in folder.iterdir())
-                outcome["code"] = 0 if after == before and app.last_result[0] == 22 else 1
+                outcome["code"] = 0 if after == before and app.last_result[0] == to_move else 1
                 root.destroy()
                 return
             root.after(300, next_step)

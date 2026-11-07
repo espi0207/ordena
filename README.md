@@ -51,23 +51,29 @@ pipx install git+https://github.com/espi0207/ordena
 ```text
 $ ordena
 Carpeta: /home/marta/Descargas
-22 archivos para ordenar (1,7 KB):
+28 archivos para ordenar (1,9 KB):
 
-  Documentos            4
-  Hojas de cálculo      2
-  Presentaciones        1
-  Fotos/2024            1
-  Fotos/2025            1
-  Fotos/2026            1
-  Imágenes              2
-  Vídeos/2025           1
-  Vídeos                1
-  Música                1
-  Comprimidos           1
-  Instaladores          2
-  Libros                1
-  Otros                 1
-  Duplicados            2   si los borras, liberas 273 bytes
+  Sospechosos                1   programas disfrazados: no los abras
+  Documentos                 5
+  Hojas de cálculo           2
+  Presentaciones             1
+  Fotos/2024                 1
+  Fotos/2025                 1
+  Fotos/2026                 1
+  Imágenes                   1
+  Capturas de pantalla       1
+  Vídeos/2025                1
+  Vídeos                     1
+  Subtítulos                 1
+  Música                     1
+  Comprimidos                1
+  Instaladores               2
+  Imágenes de disco          1
+  Libros                     1
+  Certificados y claves      1
+  Agenda                     1
+  Otros                      1
+  Duplicados                 2   si los borras, liberas 273 bytes
 
 Se quedan donde están (2): 1 oculto o del sistema, 1 descarga a medias
 
@@ -147,9 +153,36 @@ Opciones:
 ## Qué hace exactamente
 
 **Por tipo**, según la extensión: Documentos, Hojas de cálculo, Presentaciones,
-Imágenes, Vídeos, Música, Comprimidos, Instaladores, Libros, Código, Tipografías y, lo
+Imágenes, Diseño (Photoshop, Illustrator, GIMP, Figma...), Modelos 3D (STL, OBJ, DWG,
+G-code...), Vídeos, Subtítulos, Música, Comprimidos, Instaladores, Imágenes de disco
+(ISO y discos de máquinas virtuales: VMDK, VDI, OVA, QCOW2...), Libros, Código, Bases de
+datos, Certificados y claves (PEM, CRT, PFX, perfiles de OpenVPN, bases de KeePass...),
+Capturas de red (pcap), Correos, Agenda (citas y contactos), Torrents, Tipografías y, lo
 que no encaje, Otros. La lista está al principio de
 [`organizer.py`](ordena/organizer.py) y es fácil de cambiar.
+
+**Capturas de pantalla aparte.** Las reconoce por cómo las llama cada sistema
+(`Captura de pantalla 2026-...`, `Captura desde ...` en GNOME, `Screenshot_...` en
+Android, `Screen Shot ...` en un Mac antiguo) y van a `Capturas de pantalla`, también las
+grabaciones de pantalla. Así no se mezclan con las fotos.
+
+**Archivos sin extensión.** Si un archivo llega sin extensión (o con una que no conoce),
+mira sus primeros bytes, que dicen qué es: `%PDF` es un PDF, `PK` un ZIP, `MZ` un programa
+de Windows... Se ordena según lo que es y la nota lo dice: "es un PDF aunque el nombre no
+lo diga". No se le cambia el nombre.
+
+**Sospechosos.** Los programas disfrazados de documento o de foto van a `Sospechosos`,
+lo primero del resumen y en rojo, con una nota de por qué:
+
+- doble extensión: `factura.pdf.exe`, `foto.jpg.scr`, `pedido.pdf.js` (Windows esconde
+  la última y se ve `factura.pdf`);
+- muchos espacios antes del `.exe`, para que no se vea;
+- el carácter invisible que da la vuelta al texto (`factura‮fdp.exe` se ve como
+  `facturaexe.pdf`);
+- un `.pdf` o un `.jpg` que por dentro es un programa de Windows.
+
+Es el truco de siempre de los adjuntos de phishing. ordena no los borra ni los abre:
+solo los aparta para que no se abran sin querer.
 
 **Fotos y vídeos por fecha**, en carpetas como `Fotos/2024/08 agosto` (con el número
 delante para que los meses salgan en orden). La fecha no es la del archivo, que al

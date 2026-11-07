@@ -80,6 +80,14 @@ FILES = [
     ("zoom_amd64.deb", filler("zoom"), 110),
     ("El Quijote.epub", filler("quijote"), 400),
     ("entradas-concierto.pkpass", filler("entradas"), 15),
+    ("ubuntu-24.04.1-desktop-amd64.iso", filler("iso"), 35),
+    ("tutorial excel tablas dinámicas.es.srt", filler("subtítulos"), 40),
+    ("cita médico.ics", b"BEGIN:VCALENDAR\nEND:VCALENDAR\n", 9),
+    ("vpn-clase.ovpn", filler("vpn"), 50),
+    # Un adjunto de phishing de los de siempre: parece un PDF y es un script de Windows.
+    # Este es inofensivo (solo un comentario), pero ordena lo aparta igual.
+    ("Factura pendiente.pdf.js", b"// archivo de ejemplo de ordena: no hace nada\n", 2),
+    ("descarga", b"%PDF-1.4\n% ejemplo de ordena: un PDF que ha llegado sin extension\n", 4),
     ("temporada 2 capítulo 3.mkv.crdownload", filler("a medias"), 0),
     ("desktop.ini", b"[.ShellClassInfo]\n", 500),
 ]

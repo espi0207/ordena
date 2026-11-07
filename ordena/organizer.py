@@ -24,20 +24,36 @@ from .media import taken_date
 JOURNAL = ".ordena-historial.jsonl"
 DUPLICATES = "Duplicados"
 
+SCREENSHOTS = "Capturas de pantalla"
+SUSPICIOUS = "Sospechosos"
+
 CATEGORIES = {
-    "Documentos": ["pdf", "doc", "docx", "odt", "rtf", "txt", "md", "pages", "tex"],
-    "Hojas de cálculo": ["xls", "xlsx", "ods", "csv", "numbers"],
-    "Presentaciones": ["ppt", "pptx", "odp", "key"],
+    "Documentos": ["pdf", "doc", "docx", "docm", "dotx", "odt", "ott", "rtf", "txt", "md", "pages", "tex",
+                   "xps", "oxps", "wpd"],
+    "Hojas de cálculo": ["xls", "xlsx", "xlsm", "xlsb", "ods", "csv", "tsv", "numbers"],
+    "Presentaciones": ["ppt", "pptx", "pps", "ppsx", "potx", "odp", "key"],
     "Imágenes": ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "svg", "avif",
-                 "cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2"],
-    "Vídeos": ["mp4", "mov", "m4v", "mkv", "avi", "webm", "3gp", "wmv", "mpg", "mpeg"],
-    "Música": ["mp3", "m4a", "flac", "wav", "ogg", "opus", "aac", "wma", "aiff"],
-    "Comprimidos": ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst"],
-    "Instaladores": ["exe", "msi", "dmg", "pkg", "deb", "rpm", "appimage", "apk", "flatpakref"],
-    "Libros": ["epub", "mobi", "azw", "azw3", "djvu", "cbz", "cbr"],
-    "Código": ["py", "js", "ts", "html", "css", "json", "xml", "yml", "yaml", "sh", "ps1", "bat",
-               "java", "c", "cpp", "h", "cs", "go", "rs", "rb", "php", "sql", "ipynb"],
-    "Tipografías": ["ttf", "otf", "woff", "woff2"],
+                 "ico", "jxl", "cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2"],
+    "Diseño": ["psd", "psb", "ai", "xcf", "fig", "sketch", "indd", "kra", "afphoto", "afdesign", "cdr", "eps"],
+    "Modelos 3D": ["stl", "obj", "fbx", "3mf", "blend", "gcode", "step", "stp", "dwg", "dxf", "skp"],
+    "Vídeos": ["mp4", "mov", "m4v", "mkv", "avi", "webm", "3gp", "wmv", "mpg", "mpeg", "flv", "vob", "mts", "m2ts"],
+    "Subtítulos": ["srt", "ass", "ssa", "vtt", "sub"],
+    "Música": ["mp3", "m4a", "m4b", "flac", "wav", "ogg", "opus", "aac", "wma", "aiff", "mid", "midi", "amr"],
+    "Comprimidos": ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "zst", "lz", "lzma", "cab", "zipx"],
+    "Instaladores": ["exe", "msi", "msix", "msixbundle", "appx", "dmg", "pkg", "deb", "rpm", "appimage", "apk",
+                     "xapk", "apks", "flatpakref", "snap"],
+    "Imágenes de disco": ["iso", "img", "vhd", "vhdx", "vmdk", "vdi", "ova", "ovf", "qcow2"],
+    "Libros": ["epub", "mobi", "azw", "azw3", "djvu", "cbz", "cbr", "cb7", "fb2"],
+    "Código": ["py", "js", "ts", "jsx", "tsx", "vue", "html", "css", "scss", "json", "xml", "yml", "yaml", "toml",
+               "sh", "ps1", "bat", "java", "kt", "swift", "c", "cpp", "h", "cs", "go", "rs", "rb", "php", "lua",
+               "sql", "ipynb", "ino"],
+    "Bases de datos": ["db", "sqlite", "sqlite3", "mdb", "accdb"],
+    "Certificados y claves": ["pem", "crt", "cer", "der", "p12", "pfx", "csr", "pub", "ovpn", "kdbx", "asc", "gpg"],
+    "Capturas de red": ["pcap", "pcapng"],
+    "Correos": ["eml", "msg", "mbox"],
+    "Agenda": ["ics", "vcf"],
+    "Torrents": ["torrent"],
+    "Tipografías": ["ttf", "otf", "woff", "woff2", "fon", "eot"],
 }  # fmt: skip
 BY_EXTENSION = {ext: folder for folder, exts in CATEGORIES.items() for ext in exts}
 
@@ -47,6 +63,45 @@ SYSTEM = {"desktop.ini", "thumbs.db", ".ds_store", JOURNAL}
 # Cómo llaman a las copias los navegadores y los sistemas: "foto (1).jpg", "informe - copia.pdf",
 # "Copia de presupuesto.xlsx" (Google Drive), "cv copy.docx" (macOS)...
 COPY_MARK = re.compile(r"( \(\d+\)| - copia( \(\d+\))?| copia| copy( \d+)?)$|^(copia de|copy of) ", re.IGNORECASE)
+# Capturas de pantalla y grabaciones de pantalla, por cómo las llama cada sistema.
+SCREENSHOT_NAME = re.compile(
+    r"^(captura de pantalla|captura desde|screenshot|screen ?shot|grabaci[oó]n de pantalla|screen ?recording|"
+    r"pantallazo)(?=[\s_.\d-]|$)",  # "Screenshot_2026...": el _ cuenta como letra para \b
+    re.IGNORECASE,
+)
+
+# Lo primero que llevan dentro algunos tipos de archivo ("números mágicos"): sirve para
+# reconocer un archivo que ha llegado sin extensión (o con una que no es la suya).
+MAGIC = [
+    (b"%PDF-", "pdf", "PDF"),
+    (b"\x89PNG\r\n\x1a\n", "png", "PNG"),
+    (b"\xff\xd8\xff", "jpg", "JPEG"),
+    (b"GIF87a", "gif", "GIF"),
+    (b"GIF89a", "gif", "GIF"),
+    (b"PK\x03\x04", "zip", "ZIP"),
+    (b"Rar!\x1a\x07", "rar", "RAR"),
+    (b"7z\xbc\xaf\x27\x1c", "7z", "7z"),
+    (b"\x1f\x8b", "gz", "gzip"),
+    (b"ID3", "mp3", "MP3"),
+    (b"fLaC", "flac", "FLAC"),
+    (b"OggS", "ogg", "Ogg"),
+    (b"{\\rtf", "rtf", "RTF"),
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "doc", "documento de Office antiguo"),
+    (b"MZ", "exe", "programa de Windows"),
+]
+RIFF_TYPES = {b"WEBP": ("webp", "WebP"), b"WAVE": ("wav", "WAV"), b"AVI ": ("avi", "AVI")}
+
+# Programas y scripts que se ejecutan con doble clic en Windows.
+EXECUTABLE = {"exe", "scr", "com", "pif", "bat", "cmd", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "msi",
+              "lnk", "ps1", "jar", "cpl", "reg"}  # fmt: skip
+# Lo que un programa disfrazado finge ser.
+LOOKS_HARMLESS = {
+    ext
+    for folder in ("Documentos", "Hojas de cálculo", "Presentaciones", "Imágenes", "Vídeos", "Música", "Comprimidos")
+    for ext in CATEGORIES[folder]
+}
+RTL_OVERRIDE = "\u202e"  # da la vuelta al texto que le sigue: "fac\u202efdp.exe" se ve "facexe.pdf"
+
 MONTHS = "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre".split()
 
 
@@ -111,16 +166,62 @@ def find_duplicates(files: list[Path]) -> dict[Path, Path]:
     return copies
 
 
+def sniff(path: Path) -> tuple[str, str] | None:
+    """(extensión, nombre del tipo) según lo que lleva dentro el archivo, o None si no se sabe."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(64)
+    except OSError:
+        return None
+    if head[:4] == b"RIFF" and head[8:12] in RIFF_TYPES:
+        return RIFF_TYPES[head[8:12]]
+    if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"heic", b"heix", b"mif1", b"msf1"):
+            return "heic", "HEIC"
+        return ("mov", "MOV") if brand == b"qt  " else ("mp4", "MP4")
+    for magic, ext, kind in MAGIC:
+        if head.startswith(magic):
+            return ext, kind
+    return None
+
+
+def suspicious(path: Path) -> str | None:
+    """Por qué parece un programa disfrazado de documento o de foto, o None si no lo parece.
+
+    Es el truco de siempre de los adjuntos maliciosos: "factura.pdf.exe" (Windows esconde
+    la última extensión), muchos espacios antes del .exe para que no se vea, el carácter
+    que da la vuelta al texto, o un programa al que directamente le han puesto .pdf.
+    """
+    name = path.name
+    if RTL_OVERRIDE in name:
+        return "el nombre lleva un carácter invisible que le da la vuelta para esconder la extensión real"
+    ext = path.suffix.lower().lstrip(".")
+    inner = Path(path.stem.rstrip()).suffix.lower().lstrip(".")
+    if ext in EXECUTABLE and inner in LOOKS_HARMLESS:
+        return f"parece un .{inner}, pero es un .{ext}: un programa disfrazado. No lo abras"
+    if ext in LOOKS_HARMLESS:
+        found = sniff(path)
+        if found and found[0] == "exe":
+            return f"dice ser un .{ext}, pero por dentro es un programa de Windows. No lo abras"
+    return None
+
+
 def destination(path: Path, by_date: bool) -> tuple[str, str]:
     """(carpeta de destino, nota para el detalle)."""
     ext = path.suffix.lower().lstrip(".")
-    folder = BY_EXTENSION.get(ext, "Otros")
+    folder, note = BY_EXTENSION.get(ext, "Otros"), ""
+    if folder == "Otros" and (found := sniff(path)):
+        ext, kind = found
+        folder, note = BY_EXTENSION[ext], f"es un {kind} aunque el nombre no lo diga"
+    if folder in ("Imágenes", "Vídeos") and SCREENSHOT_NAME.match(path.name):
+        return SCREENSHOTS, note
     if by_date and folder in ("Imágenes", "Vídeos"):
         date = taken_date(path)
         if date:
             base = "Fotos" if folder == "Imágenes" else "Vídeos"
             return f"{base}/{date.year}/{date.month:02d} {MONTHS[date.month - 1]}", f"del {date:%d/%m/%Y}"
-    return folder, ""
+    return folder, note
 
 
 def free_name(target: PurePosixPath, taken: set[str], root: Path) -> PurePosixPath:
@@ -157,7 +258,9 @@ def build_plan(root: Path, by_date: bool = True, duplicates: bool = True) -> Pla
     copies = find_duplicates(files) if duplicates else {}
     taken: set[str] = set()
     for f in files:
-        if f in copies:
+        if reason := suspicious(f):
+            folder, note = SUSPICIOUS, reason
+        elif f in copies:
             folder, note = DUPLICATES, f"igual que {copies[f].name}"
         else:
             folder, note = destination(f, by_date)

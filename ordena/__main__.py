@@ -12,7 +12,7 @@ from pathlib import Path
 from . import __version__, demo
 from .ansi import clean, paint
 from .folders import downloads_folder, refuse_reason
-from .organizer import DUPLICATES, JOURNAL, Plan, apply_plan, build_plan, last_run, undo_last
+from .organizer import DUPLICATES, JOURNAL, SUSPICIOUS, Plan, apply_plan, build_plan, last_run, undo_last
 from .report import human_size, plural, run_date, summary_key
 
 
@@ -36,6 +36,8 @@ def print_summary(plan: Plan) -> None:
         if label == DUPLICATES:
             freed = human_size(sum(m.size for m in plan.duplicates))
             line = paint(line, "yellow") + paint(f"   si los borras, liberas {freed}", "gray")
+        elif label == SUSPICIOUS:
+            line = paint(line, "red") + paint("   programas disfrazados: no los abras", "gray")
         print(line)
 
 

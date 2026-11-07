@@ -5,9 +5,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .organizer import CATEGORIES, DUPLICATES
+from .organizer import CATEGORIES, DUPLICATES, SCREENSHOTS, SUSPICIOUS
 
-ORDER = [*CATEGORIES, "Otros", DUPLICATES]
+# Los sospechosos, lo primero; las capturas de pantalla, justo después de las imágenes.
+_categories = list(CATEGORIES)
+ORDER = [SUSPICIOUS, *_categories[: _categories.index("Imágenes") + 1], SCREENSHOTS]
+ORDER += [*_categories[_categories.index("Imágenes") + 1 :], "Otros", DUPLICATES]
 
 
 def human_size(size: float) -> str:
